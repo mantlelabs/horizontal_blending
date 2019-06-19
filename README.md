@@ -87,5 +87,15 @@ out = row_A * (1.0 - alpha) + row_B * alpha
 ```
 
 
+## Dependencies
+
+A lot unfortunately, since I quickly threw this together:
+
+* `rasterio` (tested with `1.0.23`)
+* `numpy` (tested with `1.16.4`)
+* `openCV` (tested with `4.1.0.25`)
+* `GDAL` command line utilities available on `PATH` (tested with `2.2.3`)
+
+
 
 
