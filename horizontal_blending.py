@@ -109,8 +109,10 @@ def remove_edges(images: list,
         #  remove padding
         mask_dil = remove_padding(mask_dil, buffer_size_pixel)
 
-        #  write data pixels of dilated mask with original image
+        #  overwrite data pixels of dilated mask with original image
+        #  and nodata pixels with nodata value
         mask_dil[mask_dil == 0] = img_data[mask_dil == 0]
+        mask_dil[mask_dil == 1] = nodatas[i]
 
         #  generate filename
         filename, ext = os.path.splitext(os.path.basename(images[i]))
@@ -124,9 +126,11 @@ def remove_edges(images: list,
     return out_imgs
 
 
-def sigmoid(x: int) -> np.ndarray:
+def sigmoid(num: int) -> np.ndarray:
     """sigmoid function for creating alpha mask
     from https://stackoverflow.com/questions/29106702/blend-overlapping-images-in-python"""  # noqa E501
+
+    x = np.arange(-10, 10, 2/int(num))[:-1:10]
 
     y = np.zeros(len(x))
     for i in range(len(x)):
@@ -139,16 +143,23 @@ def get_overlap_area(image_data_A: np.ndarray,
                      nodata_A: int,
                      nodata_B: int) -> np.ndarray:
 
-    return (image_data_A != nodata_A) & (image_data_B != nodata_B)
+    valid_A = image_data_A != nodata_A
+    valid_B = image_data_B != nodata_B
+
+    return np.logical_and(valid_A, valid_B)
 
 
 def blend_row(row_A: np.ndarray,
               row_B: np.ndarray,
               row_overlap: np.ndarray) -> np.ndarray:
 
-    len_overlap = np.sum(row_overlap.astype(np.uint8))
+    len_overlap = np.sum(row_overlap.astype(np.uint32))
     alpha = sigmoid(len_overlap)
-    out = row_A * (1.0 - alpha) + row_B * alpha
+
+    print(alpha)
+
+    out = row_A[row_overlap == 1] * (1.0 - alpha) + \
+        row_B[row_overlap == 1] * alpha
 
     out_row = row_overlap.astype(row_A.dtype)
 
@@ -171,8 +182,6 @@ def do_blending(merged_image: str,
 
     overlap = get_overlap_area(image_data_A, image_data_B,
                                nodata_A, nodata_B)
-
-    print(overlap)
 
     #  prepare output image and populate
     merged_img = image_data_A
@@ -227,7 +236,7 @@ def horizontal_blending(image_A: str,
 
     kwds['count'] = 1
     with rasterio.open(output_file, 'w', **kwds) as img:
-        img.write(np.reshape(result, [1] + merged_image.shape))
+        img.write(np.reshape(result, [1] + list(result.shape)))
 
 
 if __name__ == "__main__":
