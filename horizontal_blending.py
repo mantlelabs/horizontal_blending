@@ -14,17 +14,26 @@ import math
 
 
 def parse_inputs():
+    """
+    Command line parsing
+    """
 
     parser = argparse.ArgumentParser(
         description='horizontal seamless mosaicking of two images')
-    parser.add_argument('-nd_A', help='NoData value for Image A',
+    parser.add_argument('-ooo_A', '--out_of_orbit_A',
+                        metavar='VALUE',
+                        help='Out-of-orbit value for Image A',
                         type=int, default=0)
-    parser.add_argument('-nd_B', help='NoData value for Image B',
+    parser.add_argument('-ooo_B', '--out_of_orbit_B',
+                        metavar='VALUE',
+                        help='Out-of-orbit value for Image B',
                         type=int, default=0)
-    parser.add_argument('-o', help='/path/to/output_file',
+    parser.add_argument('-o', '--output_image',
+                        help='/path/to/output_image, default: "merged.tif"',
                         type=str, default=None)
 
-    parser.add_argument('-b', help='size of border to remove (in pixel)',
+    parser.add_argument('-b', '--buffer_size_pixel',
+                        help='size of border to remove (in pixel)',
                         type=int, default=0)
 
     parser.add_argument('image_A', help='Image A', type=str)
@@ -44,7 +53,9 @@ def parse_inputs():
 def pad_with(vector, pad_width, iaxis, kwargs):
     """helper function to pad image with a value
 
-    from https://docs.scipy.org/doc/numpy/reference/generated/numpy.pad.html"""
+    from https://docs.scipy.org/doc/numpy/reference/generated/numpy.pad.html
+
+    Used for better buffering....probably not needed anyway?"""
 
     pad_value = kwargs.get('padder', 0)
     vector[:pad_width[0]] = pad_value
@@ -62,6 +73,9 @@ def remove_padding(matrix: np.ndarray,
 def merge_images(images_list: list,
                  tmp_folder: str,
                  nodatas: list) -> str:
+    """
+    merge image together using GDAL command line tools;
+    just to get both input images in the same geometry"""
 
     #  build file name of merged image out of inputs
     merged_file = os.path.join(tmp_folder, '{}_{}'.format(
@@ -81,6 +95,10 @@ def remove_edges(images: list,
                  buffer_size_pixel: int,
                  nodatas: list,
                  tmp_folder: str) -> list:
+    """
+    Use dilation to buffer NoData area to remove unwanted effects
+    on border boundaries
+    """
 
     #  create kernel for dilation
     kernel = np.ones((buffer_size_pixel*2+1, buffer_size_pixel*2+1), np.uint8)
@@ -120,6 +138,7 @@ def remove_edges(images: list,
                                '{}_buffered{}'.format(filename, ext))
         out_imgs.append(img_out)
 
+        #  write result
         with rasterio.open(img_out, 'w', **kwds) as img:
             img.write(np.reshape(mask_dil, [1] + list(mask_dil.shape)))
 
@@ -128,9 +147,11 @@ def remove_edges(images: list,
 
 def sigmoid(num: int) -> np.ndarray:
     """sigmoid function for creating alpha mask
-    from https://stackoverflow.com/questions/29106702/blend-overlapping-images-in-python"""  # noqa E501
+    adjusted from https://stackoverflow.com/questions/29106702/blend-overlapping-images-in-python"""  # noqa E501
 
-    x = np.arange(-10, 10, 2/int(num))[:-1:10]
+    #  parameters picked from visual inspection of sigmoid curve; see
+    #  'test_sigmoid.ipynb' notebook!
+    x = np.arange(-3, 3, 2/int(num))[:-1:3]
 
     y = np.zeros(len(x))
     for i in range(len(x)):
@@ -143,6 +164,8 @@ def get_overlap_area(image_data_A: np.ndarray,
                      nodata_A: int,
                      nodata_B: int) -> np.ndarray:
 
+    """get area with valid pixels for both images"""
+
     valid_A = image_data_A != nodata_A
     valid_B = image_data_B != nodata_B
 
@@ -152,17 +175,20 @@ def get_overlap_area(image_data_A: np.ndarray,
 def blend_row(row_A: np.ndarray,
               row_B: np.ndarray,
               row_overlap: np.ndarray) -> np.ndarray:
+    """
+    apply sigmoid function to one row of the image
+    """
 
     len_overlap = np.sum(row_overlap.astype(np.uint32))
+
+    #  get values of sigmoid function and use as 'alpha' channel
     alpha = sigmoid(len_overlap)
-
-    print(alpha)
-
     out = row_A[row_overlap == 1] * (1.0 - alpha) + \
         row_B[row_overlap == 1] * alpha
 
     out_row = row_overlap.astype(row_A.dtype)
 
+    #  write calculated values to overlap area
     out_row[row_overlap == 1] = out
 
     return out_row
@@ -175,16 +201,18 @@ def do_blending(merged_image: str,
     loop horizontally over image and do row-wise blending
     """
 
+    #  read input bands from merged image
     with rasterio.open(merged_image, 'r') as img:
         kwds = img.profile
         image_data_A = img.read(1)
         image_data_B = img.read(2)
 
+    #  calculate overlap area
     overlap = get_overlap_area(image_data_A, image_data_B,
                                nodata_A, nodata_B)
 
     #  prepare output image and populate
-    merged_img = image_data_A
+    merged_img = image_data_A.copy()
     merged_img[image_data_A == nodata_A] = \
         image_data_B[image_data_A == nodata_A]
     merged_img[overlap] = 0
@@ -208,7 +236,7 @@ def horizontal_blending(image_A: str,
     """merge two images and blend overlapping areas"""
 
     #  handle tmp folder
-    tmp_folder = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+    tmp_folder = os.path.join(os.path.realpath('.'),
                               uuid.uuid4().hex)
     os.makedirs(tmp_folder)
     atexit.register(shutil.rmtree, tmp_folder)
@@ -231,12 +259,17 @@ def horizontal_blending(image_A: str,
     #  3. do the blending
     result, kwds = do_blending(merged_image, nodata_A, nodata_B)
 
+    #  use default name if not specified
     if output_file is None:
         output_file = 'merged.tif'
 
+    #  set band count to 1 and write image
     kwds['count'] = 1
+    kwds['compress'] = 'deflate'
     with rasterio.open(output_file, 'w', **kwds) as img:
         img.write(np.reshape(result, [1] + list(result.shape)))
+
+    return output_file
 
 
 if __name__ == "__main__":
@@ -244,7 +277,7 @@ if __name__ == "__main__":
 
     horizontal_blending(args.image_A,
                         args.image_B,
-                        args.o,
-                        args.nd_A,
-                        args.nd_B,
-                        args.b)
+                        args.output_image,
+                        args.out_of_orbit_A,
+                        args.out_of_orbit_B,
+                        args.buffer_size_pixel)
