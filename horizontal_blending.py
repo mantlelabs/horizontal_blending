@@ -151,7 +151,8 @@ def sigmoid(num: int) -> np.ndarray:
 
     #  parameters picked from visual inspection of sigmoid curve; see
     #  'test_sigmoid.ipynb' notebook!
-    x = np.arange(-3, 3, 2/int(num))[:-1:3]
+    val = 5
+    x = np.arange(-val, val, 2/int(num))[:-1:val]
 
     y = np.zeros(len(x))
     for i in range(len(x)):
