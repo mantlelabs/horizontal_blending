@@ -43,21 +43,49 @@ This script can be used from the command line or imported into python scripts.
 
 or
 
-    ```python
-    from horizontal_blending import horizontal_blending
+```python
+from horizontal_blending import horizontal_blending
 
-    horizontal_blending(image_A: str,
-                        image_B: str,
-                        output_file: str = None,
-                        nodata_A: int = 0,
-                        nodata_B: int = 0,
-                        buffer_size_pixel: int = None) -> str:
+horizontal_blending(image_A: str,
+                    image_B: str,
+                    output_file: str = None,
+                    nodata_A: int = 0,
+                    nodata_B: int = 0,
+                    buffer_size_pixel: int = None) -> str:
 
-    ```
+```
 
 ## Examples
 
+
+#### Image 1
 ![Image 1](samples/img_a.png "Image 1")
-![Image 2](samples/img_a.png "Image 2")
+
+#### Image 2
+![Image 2](samples/img_b.png "Image 2")
+
+#### merged without blending
 ![without blending](samples/before.png "without blending")
+
+#### merged with blending
 ![with blending](samples/merged.png "with blending")
+
+
+## Sigmoid functions
+
+For calculating the overlap, I used the sigmoid function:
+![sigmoid](samples/sigmoid.png "sigmoid")
+
+Parameters were picked with trial and error, see [this
+notebook](test_sigmoid.ipynb)
+
+## Blending function:
+
+```python
+alpha = sigmoid(len_overlap)
+out = row_A * (1.0 - alpha) + row_B * alpha
+```
+
+
+
+
